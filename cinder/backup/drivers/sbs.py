@@ -800,15 +800,24 @@ class SBSBackupDriver(driver.BackupDriver):
     def _remove_from_DSS(self, backup):
         snap_name = self._get_rbd_image_name(backup)
         LOG.info("Deleting backups %s from container %s" % (snap_name, self._container))
+        try:
+            conn = self._connect_to_DSS()
+        except Exception as e:
+            LOG.error("Failed to connect to DSS")
+            pass
+            return False
 
-        conn = self._connect_to_DSS()
         if conn != None:
-            bucket = self._get_bucket(conn, self._container)
+            try:
+                bucket = self._get_bucket(conn, self._container)
+            except Exception as e:
+                LOG.error("Failed to get bucket %s from DSS" % self._container)
+                pass
+                return False
         else:
             errmsg = _("Failed to connect to object store")
             LOG.error(errmsg)
-            raise exception.InvalidBackup(reason=errmsg)
-            return
+            return False
 
         if bucket != None:
             try:
@@ -816,9 +825,10 @@ class SBSBackupDriver(driver.BackupDriver):
             except Exception as e:
                 errmsg = (_("Failed to delete backup %s from object store") % (snap_name))
                 LOG.error(errmsg)
-                raise exception.InvalidBackup(reason=errmsg)
+                pass
+                return False
 
-        return
+        return True
 
     def _delete_snap_from_src(self, backup):
         volume_name = encodeutils.safe_encode("volume-%s" % (backup['volume_id']))
@@ -849,7 +859,9 @@ class SBSBackupDriver(driver.BackupDriver):
         while i < length:
 	    backup = backup_list[i]
             LOG.debug("Deleting backup %s" % backup['id'])
-            self._remove_from_DSS(backup)
+            ret = self._remove_from_DSS(backup)
+            if ret == False:
+                LOG.error("Deleting backup %s from DSS failed" % backup['id'])
             self._delete_snap_from_src(backup)
             self.db.backup_destroy(self.context, backup['id'])
             last_backup = backup
