@@ -832,6 +832,11 @@ class SBSBackupDriver(driver.BackupDriver):
             except self.rbd.ImageNotFound:
                 LOG.info(_LI("volume %s no longer exists in backend") % volume_name)
                 pass
+            except self.rbd.IOError:
+                #Donot fail if snapshot is not found, volume delete removes it too
+                LOG.info(_LI("Failed to remove snapshot % of volume %s") %
+                        (backup_name, volume_name))
+                pass
             finally:
                 if backup_rbd != None:
                     backup_rbd.close()
