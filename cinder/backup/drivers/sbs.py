@@ -41,6 +41,9 @@ import boto.s3.connection
 import eventlet
 import math
 import uuid
+import multiprocessing
+import glob
+
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import encodeutils
@@ -402,6 +405,40 @@ class SBSBackupDriver(driver.BackupDriver):
                 return None
         return backup_bucket
 
+    def upload(self, mp, file_path, part_num):
+        LOG.DEBUG("Uploading chunk %s part %d" % (file_path, part_num + 1))
+        fp = open(file_path, "r+")
+        mp.upload_part_from_file(fp, part_num + 1)
+
+    def split_file(self, in_file):
+        prefix = os.path.join(os.path.dirname(in_file),
+                              "%sDSS_PART" % (os.path.basename(in_file)))
+        split_size = self._chunk_size
+        cl = ["split", "-b%s" % split_size, in_file, prefix]
+        subprocess.check_call(cl)
+        return sorted(glob.glob("%s*" % prefix))
+
+    def multi_thread_upload(self, bucket, key, loc):
+        split_parts = []
+        process_list = []
+        mp = bucket.initiate_multipart_upload(key)
+
+        split_parts = split_file(loc)
+        for i, part in enumerate(split_parts):
+            p = multiprocessing.Process(target=self.upload, args=(mp, part,i))
+            process_list.append(p)
+
+        for i in range(len(process_list)):
+            process_list[i].start()
+
+        for i in range(len(process_list)):
+            process_list[i].join()
+
+        mp.complete_upload()
+
+        for i, part in enumerate(split_parts):
+            os.remove (part)
+
     #currently broken, not used
     def _multi_part_upload(self, bucket, key, loc):
         size = os.stat(loc).st_size
@@ -446,8 +483,9 @@ class SBSBackupDriver(driver.BackupDriver):
             raise exception.BackupOperationError(msg)
             return
         try:
-            self._multi_part_upload(bucket, key, loc)
+            #self._multi_part_upload(bucket, key, loc)
             #key.set_contents_from_filename(loc)
+            self.multi_thread_upload(bucket, key, loc)
         except exception as e:
             os.remove(loc)
             msg = (_("Failed to upload backup % to object store") % (snap_name))
