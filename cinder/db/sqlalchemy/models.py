@@ -158,6 +158,8 @@ class Volume(BASE, CinderBase):
     source_volid = Column(String(36))
     encryption_key_id = Column(String(36))
     miscellaneous = Column(String(256))
+    cleaned = Column(Boolean, default=True)
+    cleaner = Column(String(264))
 
     consistencygroup_id = Column(String(36))
 

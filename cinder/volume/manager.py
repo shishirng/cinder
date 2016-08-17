@@ -546,17 +546,9 @@ class VolumeManager(manager.SchedulerDependentManager):
             if unmanage_only:
                 self.driver.unmanage(volume_ref)
             else:
-                self.driver.delete_volume(volume_ref, context)
+                self.db.volume_update(context, volume_ref['id'],
+                                      {'cleaned': False})
 
-        except exception.VolumeIsBusy:
-            LOG.error(_LE("Cannot delete volume %s: volume is busy"),
-                      volume_ref['id'])
-            # If this is a destination volume, we have to clear the database
-            # record to avoid user confusion.
-            self._clear_db(context, is_migrating_dest, volume_ref,
-                           'available')
-            #TODO Volume Busy metric
-            return True
         except Exception:
             with excutils.save_and_reraise_exception():
                 # If this is a destination volume, we have to clear the
